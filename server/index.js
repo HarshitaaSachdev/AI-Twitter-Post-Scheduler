@@ -1,78 +1,74 @@
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { createPost } from "../server/mcp.tool.js"
 import { z } from "zod";
+import {
+  createPost,
+  listScheduledPosts,
+  cancelScheduledPost,
+  startScheduler,
+} from "./mcp.tool.js";
+
+const PORT = process.env.PORT || 3001;
 
 const server = new McpServer({
-    name: "example-server",
-    version: "1.0.0"
+  name: "tweetguard",
+  version: "1.1.0",
 });
 
-// ... set up server resources, tools, and prompts ...
+server.tool(
+  "createPost",
+  "Post a tweet on X (formerly Twitter) now, or schedule it for later. Content is checked by a moderation filter first.",
+  {
+    status: z.string().min(1).describe("The tweet text"),
+    delayInMinutes: z
+      .number()
+      .min(0)
+      .optional()
+      .describe("Minutes from now to post. Leave out to post immediately."),
+  },
+  async ({ status, delayInMinutes }) => createPost(status, delayInMinutes)
+);
+
+server.tool(
+  "listScheduledPosts",
+  "List tweets that are scheduled but not yet posted.",
+  {},
+  async () => listScheduledPosts()
+);
+
+server.tool(
+  "cancelScheduledPost",
+  "Cancel a scheduled tweet by its id.",
+  { id: z.string().describe("The id of the scheduled post") },
+  async ({ id }) => cancelScheduledPost(id)
+);
 
 const app = express();
 
-
-server.tool(
-    "addTwoNumbers",
-    "Add two numbers",
-    {
-        a: z.number(),
-        b: z.number()
-    },
-    async (arg) => {
-        const { a, b } = arg;
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: `The sum of ${a} and ${b} is ${a + b}`
-                }
-            ]
-        }
-    }
-)
-
-
-server.tool(
-    "createPost",
-    "Create or schedule a post on X (formerly Twitter), with content moderation.",
-    {
-      status: z.string(),
-      delayInMinutes: z.number().optional(),
-    },
-    async (arg) => {
-      const { status, delayInMinutes } = arg;
-      return createPost(status, delayInMinutes);
-    }
-  );
-  
-
-
-// to support multiple simultaneous connections we have a lookup object from
-// sessionId to transport
+// One SSE connection per client session.
 const transports = {};
 
 app.get("/sse", async (req, res) => {
-    const transport = new SSEServerTransport('/messages', res);
-    transports[ transport.sessionId ] = transport;
-    res.on("close", () => {
-        delete transports[ transport.sessionId ];
-    });
-    await server.connect(transport);
+  const transport = new SSEServerTransport("/messages", res);
+  transports[transport.sessionId] = transport;
+  res.on("close", () => {
+    delete transports[transport.sessionId];
+  });
+  await server.connect(transport);
 });
 
 app.post("/messages", async (req, res) => {
-    const sessionId = req.query.sessionId;
-    const transport = transports[ sessionId ];
-    if (transport) {
-        await transport.handlePostMessage(req, res);
-    } else {
-        res.status(400).send('No transport found for sessionId');
-    }
+  const transport = transports[req.query.sessionId];
+  if (transport) {
+    await transport.handlePostMessage(req, res);
+  } else {
+    res.status(400).send("No transport found for sessionId");
+  }
 });
 
-app.listen(3001, () => {
-    console.log("Server is running on http://localhost:3001");
+startScheduler();
+
+app.listen(PORT, () => {
+  console.log(`TweetGuard MCP server running on http://localhost:${PORT}`);
 });
