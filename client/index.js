@@ -7,7 +7,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 config();
 
 const SERVER_URL = process.env.MCP_SERVER_URL || "http://localhost:3001/sse";
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 
 const SYSTEM_PROMPT = `You are TweetGuard, an assistant that helps the user post and schedule tweets.
 Use the available tools to post, schedule, list or cancel tweets.
